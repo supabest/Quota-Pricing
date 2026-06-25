@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>登录 - 装修成本分析工具</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&display=swap');
+:root{
+  --bg:#f0f5fa;--bg2:#ffffff;--bg3:#f7fafd;
+  --border:#c8d8e8;--bdr2:#a0bcce;
+  --acc:#1d6fa5;--acc2:#155d8e;--acc-d:rgba(29,111,165,.10);
+  --grn:#0b7b50;--red:#b93232;--red-d:rgba(185,50,50,.10);
+  --tx:#1a2d3d;--tx2:#3a5470;--tx3:#6e8fa8;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);font-family:'Noto Sans SC',sans-serif;color:var(--tx);
+  min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:14px;
+  width:380px;padding:32px 30px;box-shadow:0 10px 40px rgba(20,50,80,.08)}
+.logo{width:48px;height:48px;background:var(--acc);border-radius:12px;display:flex;
+  align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:18px;
+  margin:0 auto 16px;box-shadow:0 4px 12px rgba(29,111,165,.3)}
+h1{font-size:18px;text-align:center;margin-bottom:4px;font-weight:700}
+.sub{font-size:12px;color:var(--tx3);text-align:center;margin-bottom:24px}
+.tabs{display:flex;gap:4px;background:var(--bg3);border-radius:8px;padding:3px;margin-bottom:20px}
+.tab{flex:1;text-align:center;padding:7px 0;border-radius:6px;font-size:13px;cursor:pointer;
+  color:var(--tx3);font-weight:600;transition:all .15s}
+.tab.on{background:var(--bg2);color:var(--acc);box-shadow:0 1px 4px rgba(20,50,80,.08)}
+.field{margin-bottom:14px}
+.field label{display:block;font-size:12px;color:var(--tx2);margin-bottom:5px;font-weight:600}
+.field input{width:100%;background:var(--bg3);border:1.5px solid var(--border);border-radius:8px;
+  padding:10px 12px;font-size:13px;color:var(--tx);outline:none;transition:border-color .15s;font-family:inherit}
+.field input:focus{border-color:var(--acc);box-shadow:0 0 0 3px var(--acc-d)}
+.btn{width:100%;padding:11px 0;border-radius:8px;border:none;background:var(--acc);color:#fff;
+  font-size:14px;font-weight:700;cursor:pointer;transition:opacity .15s;margin-top:6px;font-family:inherit}
+.btn:hover{opacity:.9}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.msg{font-size:12px;text-align:center;margin-top:14px;padding:10px;border-radius:7px;line-height:1.6}
+.msg.err{background:var(--red-d);color:var(--red)}
+.msg.ok{background:rgba(11,123,80,.1);color:var(--grn)}
+.hidden{display:none!important}
+.foot{text-align:center;margin-top:20px;font-size:11px;color:var(--tx3)}
+</style>
+</head>
+<body>
+
+<div class="card">
+  <div class="logo">装</div>
+  <h1>装修成本分析工具</h1>
+  <div class="sub">企业定额套价 · 团队协作平台</div>
+
+  <div class="tabs">
+    <div class="tab on" id="tabLogin" onclick="switchTab('login')">登录</div>
+    <div class="tab" id="tabRegister" onclick="switchTab('register')">注册</div>
+  </div>
+
+  <!-- 登录表单 -->
+  <div id="loginForm">
+    <div class="field">
+      <label>邮箱</label>
+      <input type="email" id="loginEmail" placeholder="your@email.com" autocomplete="email">
+    </div>
+    <div class="field">
+      <label>密码</label>
+      <input type="password" id="loginPassword" placeholder="••••••••" autocomplete="current-password">
+    </div>
+    <button class="btn" id="loginBtn" onclick="doLogin()">登录</button>
+  </div>
+
+  <!-- 注册表单 -->
+  <div id="registerForm" class="hidden">
+    <div class="field">
+      <label>邮箱</label>
+      <input type="email" id="regEmail" placeholder="your@email.com" autocomplete="email">
+    </div>
+    <div class="field">
+      <label>姓名（方便同事识别）</label>
+      <input type="text" id="regName" placeholder="如：张三" autocomplete="name">
+    </div>
+    <div class="field">
+      <label>密码（至少6位）</label>
+      <input type="password" id="regPassword" placeholder="••••••••" autocomplete="new-password">
+    </div>
+    <button class="btn" id="registerBtn" onclick="doRegister()">提交注册</button>
+  </div>
+
+  <div id="msgBox" class="msg hidden"></div>
+  <div class="foot">注册后需管理员审批通过才能登录使用</div>
+</div>
+
+<script>
+// ═══════════ Supabase 初始化 ═══════════
+const SUPABASE_URL = 'https://bcorsdvfhxcbhvdssvui.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_tsmGqoGYyUi7mUluIfgvWA_Mj3lMlwP';
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+function switchTab(which) {
+  document.getElementById('tabLogin').classList.toggle('on', which==='login');
+  document.getElementById('tabRegister').classList.toggle('on', which==='register');
+  document.getElementById('loginForm').classList.toggle('hidden', which!=='login');
+  document.getElementById('registerForm').classList.toggle('hidden', which!=='register');
+  hideMsg();
+}
+
+function showMsg(text, isErr) {
+  const box = document.getElementById('msgBox');
+  box.textContent = text;
+  box.className = 'msg ' + (isErr ? 'err' : 'ok');
+  box.classList.remove('hidden');
+}
+function hideMsg() {
+  document.getElementById('msgBox').classList.add('hidden');
+}
+
+// ═══════════ 登录 ═══════════
+async function doLogin() {
+  const email = document.getElementById('loginEmail').value.trim();
+  const password = document.getElementById('loginPassword').value;
+  if (!email || !password) { showMsg('请填写邮箱和密码', true); return; }
+
+  const btn = document.getElementById('loginBtn');
+  btn.disabled = true; btn.textContent = '登录中…';
+
+  const { data, error } = await sb.auth.signInWithPassword({ email, password });
+
+  if (error) {
+    showMsg('登录失败：' + (error.message.includes('Invalid') ? '邮箱或密码错误' : error.message), true);
+    btn.disabled = false; btn.textContent = '登录';
+    return;
+  }
+
+  // 登录成功，检查审批状态
+  const { data: profile, error: pErr } = await sb
+    .from('profiles')
+    .select('approved, is_admin, display_name')
+    .eq('id', data.user.id)
+    .single();
+
+  if (pErr || !profile) {
+    showMsg('账号资料异常，请联系管理员', true);
+    btn.disabled = false; btn.textContent = '登录';
+    return;
+  }
+
+  if (!profile.approved) {
+    showMsg('您的账号正在等待管理员审批，请稍候再试', true);
+    await sb.auth.signOut();
+    btn.disabled = false; btn.textContent = '登录';
+    return;
+  }
+
+  showMsg('登录成功，正在跳转…', false);
+  // 跳转到主工具页（阶段2才会真正接上）
+  setTimeout(() => { window.location.href = 'index.html'; }, 600);
+}
+
+// ═══════════ 注册 ═══════════
+async function doRegister() {
+  const email = document.getElementById('regEmail').value.trim();
+  const name = document.getElementById('regName').value.trim();
+  const password = document.getElementById('regPassword').value;
+
+  if (!email || !password) { showMsg('请填写邮箱和密码', true); return; }
+  if (password.length < 6) { showMsg('密码至少需要6位', true); return; }
+
+  const btn = document.getElementById('registerBtn');
+  btn.disabled = true; btn.textContent = '提交中…';
+
+  const { data, error } = await sb.auth.signUp({
+    email, password,
+    options: { data: { display_name: name || email.split('@')[0] } }
+  });
+
+  if (error) {
+    showMsg('注册失败：' + error.message, true);
+    btn.disabled = false; btn.textContent = '提交注册';
+    return;
+  }
+
+  // 如果填写了姓名，更新 profile 的 display_name
+  if (name && data.user) {
+    await sb.from('profiles').update({ display_name: name }).eq('id', data.user.id);
+  }
+
+  showMsg('注册成功！请等待管理员审批后再登录', false);
+  document.getElementById('regEmail').value = '';
+  document.getElementById('regName').value = '';
+  document.getElementById('regPassword').value = '';
+  btn.disabled = false; btn.textContent = '提交注册';
+  setTimeout(() => switchTab('login'), 2000);
+}
+
+// 回车提交
+document.getElementById('loginPassword').addEventListener('keydown', e => {
+  if (e.key === 'Enter') doLogin();
+});
+document.getElementById('regPassword').addEventListener('keydown', e => {
+  if (e.key === 'Enter') doRegister();
+});
+
+// 如果已登录，直接跳转
+(async () => {
+  const { data } = await sb.auth.getSession();
+  if (data.session) {
+    const { data: profile } = await sb.from('profiles').select('approved').eq('id', data.session.user.id).single();
+    if (profile && profile.approved) {
+      window.location.href = 'index.html';
+    }
+  }
+})();
+</script>
+</body>
+</html>

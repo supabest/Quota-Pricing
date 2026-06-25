@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>管理员后台 - 装修成本分析工具</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+:root{
+  --bg:#f0f5fa;--bg2:#ffffff;--bg3:#f7fafd;--bg4:#eaf1f8;
+  --border:#c8d8e8;--bdr2:#a0bcce;
+  --acc:#1d6fa5;--acc2:#155d8e;--acc-d:rgba(29,111,165,.10);
+  --grn:#0b7b50;--grn-d:rgba(11,123,80,.10);
+  --yel:#b07000;--yel-d:rgba(176,112,0,.10);
+  --red:#b93232;--red-d:rgba(185,50,50,.10);
+  --tx:#1a2d3d;--tx2:#3a5470;--tx3:#6e8fa8;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);font-family:'Noto Sans SC',sans-serif;color:var(--tx);font-size:13px}
+.hdr{background:var(--bg2);border-bottom:2px solid var(--border);height:54px;padding:0 24px;
+  display:flex;align-items:center;justify-content:space-between}
+.hdr-l{display:flex;align-items:center;gap:10px}
+.logo{width:30px;height:30px;background:var(--acc);border-radius:7px;display:flex;align-items:center;
+  justify-content:center;color:#fff;font-weight:700;font-size:12px}
+.hdr-title{font-size:15px;font-weight:700}
+.hdr-r{display:flex;gap:10px;align-items:center}
+.btn{padding:6px 14px;border-radius:7px;border:1.5px solid var(--border);background:var(--bg2);
+  color:var(--tx2);font-size:12px;cursor:pointer;font-family:inherit;transition:all .12s}
+.btn:hover{background:var(--bg4);border-color:var(--bdr2)}
+.btn-pri{background:var(--acc);border-color:var(--acc);color:#fff}
+.btn-pri:hover{background:var(--acc2)}
+.btn-grn{background:var(--grn-d);border-color:var(--grn);color:var(--grn)}
+.btn-grn:hover{background:rgba(11,123,80,.2)}
+.btn-red{background:var(--red-d);border-color:var(--red);color:var(--red)}
+.btn-red:hover{background:rgba(185,50,50,.2)}
+.wrap{max-width:1000px;margin:0 auto;padding:30px 24px}
+.section{background:var(--bg2);border:1px solid var(--border);border-radius:12px;margin-bottom:22px;overflow:hidden}
+.section-hdr{padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.section-title{font-size:14px;font-weight:700}
+.badge{background:var(--acc-d);color:var(--acc);font-size:11px;padding:2px 9px;border-radius:10px;font-weight:600}
+table{width:100%;border-collapse:collapse}
+th{text-align:left;padding:10px 16px;font-size:11px;color:var(--tx3);font-weight:600;
+  border-bottom:1px solid var(--border);background:var(--bg3)}
+td{padding:12px 16px;font-size:12px;border-bottom:1px solid var(--border);vertical-align:middle}
+tr:last-child td{border-bottom:none}
+.email{font-family:'JetBrains Mono',monospace;font-size:11px}
+.tag{display:inline-block;padding:2px 8px;border-radius:5px;font-size:10px;font-weight:600}
+.tag-pending{background:var(--yel-d);color:var(--yel)}
+.tag-approved{background:var(--grn-d);color:var(--grn)}
+.tag-admin{background:var(--acc-d);color:var(--acc)}
+.empty{padding:40px;text-align:center;color:var(--tx3);font-size:12px}
+.row-actions{display:flex;gap:6px}
+.loading{padding:40px;text-align:center;color:var(--tx3)}
+</style>
+</head>
+<body>
+
+<div class="hdr">
+  <div class="hdr-l">
+    <div class="logo">装</div>
+    <span class="hdr-title">管理员后台</span>
+  </div>
+  <div class="hdr-r">
+    <span id="adminName" style="font-size:12px;color:var(--tx3)"></span>
+    <button class="btn" onclick="window.location.href='index.html'">← 返回套价工具</button>
+    <button class="btn" onclick="doLogout()">退出登录</button>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <div class="section">
+    <div class="section-hdr">
+      <span class="section-title">⏳ 待审批用户</span>
+      <span class="badge" id="pendingCount">0</span>
+    </div>
+    <div id="pendingList" class="loading">加载中…</div>
+  </div>
+
+  <div class="section">
+    <div class="section-hdr">
+      <span class="section-title">👥 全部用户</span>
+      <span class="badge" id="allCount">0</span>
+    </div>
+    <div id="allList" class="loading">加载中…</div>
+  </div>
+
+</div>
+
+<script>
+const SUPABASE_URL = 'https://bcorsdvfhxcbhvdssvui.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_tsmGqoGYyUi7mUluIfgvWA_Mj3lMlwP';
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+let currentUser = null;
+
+async function init() {
+  const { data } = await sb.auth.getSession();
+  if (!data.session) { window.location.href = 'login.html'; return; }
+
+  const { data: profile, error } = await sb.from('profiles')
+    .select('*').eq('id', data.session.user.id).single();
+
+  if (error || !profile || !profile.is_admin) {
+    alert('您没有管理员权限');
+    window.location.href = 'index.html';
+    return;
+  }
+
+  currentUser = profile;
+  document.getElementById('adminName').textContent = '管理员：' + (profile.display_name || profile.email);
+
+  loadUsers();
+}
+
+async function loadUsers() {
+  const { data: users, error } = await sb.from('profiles')
+    .select('*').order('created_at', { ascending: false });
+
+  if (error) {
+    document.getElementById('pendingList').innerHTML = '<div class="empty">加载失败：' + error.message + '</div>';
+    return;
+  }
+
+  const pending = users.filter(u => !u.approved);
+  const all = users;
+
+  document.getElementById('pendingCount').textContent = pending.length;
+  document.getElementById('allCount').textContent = all.length;
+
+  // 待审批列表
+  const pendingEl = document.getElementById('pendingList');
+  if (!pending.length) {
+    pendingEl.innerHTML = '<div class="empty">暂无待审批用户</div>';
+  } else {
+    pendingEl.innerHTML = `<table>
+      <tr><th>姓名</th><th>邮箱</th><th>注册时间</th><th>操作</th></tr>
+      ${pending.map(u => `
+        <tr>
+          <td>${esc(u.display_name || '—')}</td>
+          <td class="email">${esc(u.email)}</td>
+          <td>${formatDate(u.created_at)}</td>
+          <td class="row-actions">
+            <button class="btn btn-grn" onclick="approveUser('${u.id}')">✓ 批准</button>
+            <button class="btn btn-red" onclick="rejectUser('${u.id}','${esc(u.email)}')">✕ 拒绝</button>
+          </td>
+        </tr>`).join('')}
+    </table>`;
+  }
+
+  // 全部用户列表
+  const allEl = document.getElementById('allList');
+  allEl.innerHTML = `<table>
+    <tr><th>姓名</th><th>邮箱</th><th>状态</th><th>注册时间</th><th>操作</th></tr>
+    ${all.map(u => `
+      <tr>
+        <td>${esc(u.display_name || '—')}</td>
+        <td class="email">${esc(u.email)}</td>
+        <td>
+          ${u.is_admin ? '<span class="tag tag-admin">管理员</span>' : ''}
+          ${u.approved ? '<span class="tag tag-approved">已批准</span>' : '<span class="tag tag-pending">待审批</span>'}
+        </td>
+        <td>${formatDate(u.created_at)}</td>
+        <td class="row-actions">
+          ${u.id === currentUser.id ? '<span style="color:var(--tx3);font-size:11px">（本人）</span>' : `
+            ${!u.is_admin ? `<button class="btn" onclick="toggleAdmin('${u.id}', true)">设为管理员</button>` :
+                            `<button class="btn" onclick="toggleAdmin('${u.id}', false)">取消管理员</button>`}
+            ${u.approved ? `<button class="btn btn-red" onclick="revokeApproval('${u.id}')">取消授权</button>` : ''}
+          `}
+        </td>
+      </tr>`).join('')}
+  </table>`;
+}
+
+async function approveUser(id) {
+  const { error } = await sb.from('profiles').update({ approved: true }).eq('id', id);
+  if (error) { alert('操作失败：' + error.message); return; }
+  loadUsers();
+}
+
+async function rejectUser(id, email) {
+  if (!confirm('确认拒绝用户 ' + email + ' 的注册申请？该操作会保留记录但不批准登录。')) return;
+  const { error } = await sb.from('profiles').update({ approved: false }).eq('id', id);
+  if (error) { alert('操作失败：' + error.message); return; }
+  loadUsers();
+}
+
+async function revokeApproval(id) {
+  if (!confirm('确认取消此用户的使用授权？取消后该用户将无法登录。')) return;
+  const { error } = await sb.from('profiles').update({ approved: false }).eq('id', id);
+  if (error) { alert('操作失败：' + error.message); return; }
+  loadUsers();
+}
+
+async function toggleAdmin(id, makeAdmin) {
+  const msg = makeAdmin ? '确认将此用户设为管理员？管理员可以审批用户、更新基准价库。' : '确认取消此用户的管理员权限？';
+  if (!confirm(msg)) return;
+  const { error } = await sb.from('profiles').update({ is_admin: makeAdmin }).eq('id', id);
+  if (error) { alert('操作失败：' + error.message); return; }
+  loadUsers();
+}
+
+async function doLogout() {
+  await sb.auth.signOut();
+  window.location.href = 'login.html';
+}
+
+function esc(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+function formatDate(iso) {
+  const d = new Date(iso);
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')+
+    ' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+}
+
+init();
+</script>
+</body>
+</html>
